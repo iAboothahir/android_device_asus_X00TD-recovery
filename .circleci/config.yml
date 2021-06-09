@@ -1,0 +1,81 @@
+version: 2.1
+jobs:
+  mrom-X00TD:
+   docker:
+      - image: iatrpkd/docker:Twrp-build
+   steps:
+      - run:
+          name: Install Packages
+          no_output_timeout: 20m
+          command: |
+            sudo apt install -y gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
+            sudo apt install python3 python3.6 bison repo libssl-dev build-essential curl flex git gnupg gperf liblz4-tool libncurses5-dev libsdl1.2-dev libxml2 libxml2-utils lzop pngcrush schedtool squashfs-tools xsltproc zip build-essential kernel-package libncurses5-dev bzip2 git python sudo gcc g++ openssh-server tar gzip ca-certificates -y
+            sudo apt install ccache curl flex  git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip -y
+            sudo apt install curl gnupg gperf libsdl1.2-dev libxml2 libxml2-utils lzop pngcrush schedtool squashfs-tools zip g++-multilib lib32ncurses5-dev -y
+            sudo apt install android-tools-fastboot android-tools-adbd -y
+            sudo apt install -y git-core gnupg flex bison gperf build-essential zip curl lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc repo nano
+            sudo apt install -y git gnupg flex bison gperf build-essential zip curl x11proto-core-dev libx11-dev libgl1-mesa-dev libxml2-utils xsltproc unzip repo nano libssl-dev
+            sudo apt install -y bison curl flex g++-multilib gnupg gperf imagemagick lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc yasm zip bzip2 android-liblog
+      - run:
+          name: Syncing source
+          no_output_timeout: 20m
+          command: |
+            cd ~
+            mkdir mrom && cd mrom
+            repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-8.1
+            repo sync --fetch-submodules
+            rm -rf ~/mrom/bootable/recovery
+            git clone -b android-8.1-mrom https://github.com/vasishath/android_bootable_recovery ~/mrom/bootable/recovery
+            #git clone -b android-8.1-mrom https://github.com/multirom-klte/android_bootable_recovery ~/mrom/bootable/recovery
+            #git clone -b mr-9.0 https://github.com/KernelPanic-OpenSource/bootable_recovery.git ~/mrom/bootable/recovery
+            rm -rf ~/mrom/system/extras/multirom
+            git clone -b android-10 https://github.com/vasishath/multirom system/extras/multirom
+            #git clone -b master https://github.com/multirom-klte/multirom ~/mrom/system/extras/multirom
+            #git clone -b mr-9.0 https://github.com/KernelPanic-OpenSource/system_extras_multirom.git ~/mrom/system/extras/multirom
+            rm -rf ~/mrom/system/extras/multirom/adbd
+            git clone -b master https://github.com/multirom-klte/adbd ~/mrom/system/extras/multirom/adbd
+            cd ~/mrom/system/extras/multirom
+            git submodule update --init
+            cd ~/mrom && rm -rf system/extras/libbootimg
+            git clone https://github.com/vasishath/libbootimg ~/mrom/system/extras/libbootimg
+            #git clone -b master https://github.com/multirom-klte/libbootimg ~/mrom/system/extras/libbootimg
+            mkdir -p device/asus && cd device/asus
+            git clone -b multirom https://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME ASUS_X00TD
+            #cd ~/mrom && mkdir -p kernel/asus && cd kernel/asus
+            #git clone -b lineage-16.0 https://github.com/iatrz/android_kernel_asus_sdm660 ASUS_X00TD --depth=1
+            git clone -b android-8.1.0_r51 https://android.googlesource.com/platform/tools/apksig ~/mrom/tools/apksig
+            #git clone https://github.com/LineageOS/android_vendor_qcom_opensource_cryptfs_hw.git ~/mrom/vendor/qcom/opensource/cryptfs_hw
+            #git clone https://github.com/omnirom/android_vendor_qcom_opensource_commonsys ~/mrom/vendor/qcom/opensource/commonsys
+            #cd ~/mrom/vendor/qcom/opensource/commonsys && git checkout 55b77691ef05d6d9b0946df182dfd6c7388ea71c && cd ~/mrom
+      - run:
+          name: Building
+          no_output_timeout: 20m
+          command: |
+            cd ~/mrom
+            sudo apt install gcc-arm-linux-gnueabi g++-arm-linux-gnueabi -y
+            export ALLOW_MISSING_DEPENDENCIES=true
+            export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+            source build/envsetup.sh
+            lunch omni_ASUS_X00TD-eng
+            echo "compile recovery image"
+            mka -j$(nproc --all) recoveryimage
+            echo "compile multirom trampoline"
+            mka -j$(nproc --all) multirom trampoline
+            echo "compile mrom zip"
+            mka -j$(nproc --all) multirom_zip
+            echo "compile mrom_uninstaller"
+            #mka -j$(nproc --all) multirom_uninstaller
+      - run:
+          name: Telegram Upload CI
+          no_output_timeout: 20m
+          command: |
+            cd ~/mrom/out/target/product/ASUS_X00TD
+            ls -all ~/mrom/out/target/product/ASUS_X00TD
+            ZIPNAME="MultiROM-$(date +%d_%m_%Y_%H_%M)-X00TD.zip"
+            sudo zip -r9 $ZIPNAME recovery.img multirom-*-ASUS_X00TD.zip
+            curl -F chat_id=$CHAT_ID -F document=@$ZIPNAME -F parse_mode=markdown https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+workflows:
+  version: 2.1
+  cooking:
+    jobs:
+      - mrom-X00TD
